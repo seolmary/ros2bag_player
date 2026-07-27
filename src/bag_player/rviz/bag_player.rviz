@@ -1,138 +1,409 @@
 Panels:
   - Class: rviz_common/Displays
+    Help Height: 70
     Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Global Options1
+        - /Elevation Map1
+        - /PointCloud21
+      Splitter Ratio: 0.5
+    Tree Height: 349
   - Class: rviz_common/Views
+    Expanded:
+      - /Current View1
     Name: Views
+    Splitter Ratio: 0.5
 Visualization Manager:
   Class: ""
-  Global Options:
-    Background Color: 48; 48; 48
-    Fixed Frame: map
-    Frame Rate: 30
   Displays:
-    - Class: rviz_default_plugins/RobotModel
-      Name: RobotModel
-      Enabled: true
+    - Alpha: 1
+      Class: rviz_default_plugins/RobotModel
+      Collision Enabled: false
+      Description File: ""
       Description Source: Topic
       Description Topic:
-        Value: /robot_description
         Depth: 5
         Durability Policy: Transient Local
+        History Policy: Keep Last
         Reliability Policy: Reliable
-      Alpha: 1
+        Value: /robot_description
+      Enabled: true
+      Links:
+        All Links Enabled: true
+        Expand Joint Details: false
+        Expand Link Details: false
+        Expand Tree: false
+        FL_calf:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        FL_foot:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        FL_hip:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        FL_thigh:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        FR_calf:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        FR_foot:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        FR_hip:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        FR_thigh:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        IMU:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        Link Tree Style: Links in Alphabetic Order
+        RL_calf:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        RL_foot:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        RL_hip:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        RL_thigh:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        RR_calf:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        RR_foot:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        RR_hip:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        RR_thigh:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        base:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        harness:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        trunk:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+      Mass Properties:
+        Inertia: false
+        Mass: false
+      Name: RobotModel
+      TF Prefix: ""
+      Update Interval: 0
+      Value: true
       Visual Enabled: true
-      Collision Enabled: false
-    - Class: rviz_default_plugins/Grid
-      Name: Grid
-      Enabled: true
+    - Alpha: 0.5
       Cell Size: 1
-      Plane Cell Count: 40
+      Class: rviz_default_plugins/Grid
       Color: 160; 160; 164
+      Enabled: true
+      Line Style:
+        Line Width: 0.029999999329447746
+        Value: Lines
+      Name: Grid
+      Normal Cell Count: 0
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Plane: XY
+      Plane Cell Count: 40
+      Reference Frame: <Fixed Frame>
+      Value: true
     - Class: rviz_default_plugins/TF
-      Name: TF
-      Enabled: true
-      Show Names: true
-      Show Axes: true
-      Show Arrows: false
+      Enabled: false
+      Filter (blacklist): ""
+      Filter (whitelist): ""
+      Frame Timeout: 15
+      Frames:
+        All Enabled: true
       Marker Scale: 0.5
-    - Class: rviz_default_plugins/PointCloud2
+      Name: TF
+      Show Arrows: false
+      Show Axes: true
+      Show Names: true
+      Tree:
+        {}
+      Update Interval: 0
+      Value: false
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/PointCloud2
+      Color: 255; 255; 255
+      Color Transformer: Intensity
+      Decay Time: 0
+      Enabled: false
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 4096
+      Min Color: 0; 0; 0
+      Min Intensity: 0
       Name: Ouster Points
-      Enabled: true
+      Position Transformer: ""
+      Selectable: true
+      Size (Pixels): 2
+      Size (m): 0.009999999776482582
+      Style: Points
       Topic:
-        Value: /ouster/points
         Depth: 5
         Durability Policy: Volatile
+        History Policy: Keep Last
         Reliability Policy: Reliable
-      Style: Points
-      Size (Pixels): 2
-      Color Transformer: Intensity
-      Channel Name: intensity
+        Value: /ouster/points
+      Use Fixed Frame: true
       Use rainbow: true
-      Decay Time: 0
-    - Class: grid_map_rviz_plugin/GridMap
-      Name: Elevation Map
-      Enabled: true
-      Topic:
-        Value: /elevation_map
-        Depth: 1
-        Durability Policy: Volatile
-        Reliability Policy: Reliable
-      Show Grid Lines: false
-      Height Layer: elevation
-      Height Transformer: GridMapLayer
+      Value: false
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Class: grid_map_rviz_plugin/GridMap
+      Color: 200; 200; 200
       Color Layer: elevation
       Color Transformer: GridMapLayer
-      Use Rainbow: true
-    - Class: grid_map_rviz_plugin/GridMap
-      Name: Elevation Map Nav (test)
       Enabled: true
-      Topic:
-        Value: /elevation_map_nav_test
-        Depth: 1
-        Durability Policy: Volatile
-        Reliability Policy: Reliable
-      Show Grid Lines: true
       Height Layer: elevation
       Height Transformer: GridMapLayer
+      History Length: 1
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 10
+      Min Color: 53; 132; 228
+      Min Intensity: 0
+      Name: Elevation Map
+      Show Grid Lines: true
+      Topic:
+        Depth: 1
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /elevation_map
+      Use Rainbow: false
+      Value: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Class: grid_map_rviz_plugin/GridMap
+      Color: 200; 200; 200
       Color Layer: wall_cost
       Color Transformer: GridMapLayer
-      Use Rainbow: false
-      Invert Rainbow: false
-      Autocompute Intensity Bounds: true
-      Min Color: 255; 255; 255
-      Max Color: 255; 0; 0
-    - Class: rviz_default_plugins/MarkerArray
-      Name: Feet
-      Enabled: true
-      Topic:
-        Value: /feet_visualize
-        Depth: 5
-        Durability Policy: Volatile
-        Reliability Policy: Reliable
-    - Class: rviz_default_plugins/MarkerArray
-      Name: Filter Volumes
       Enabled: false
+      Height Layer: elevation
+      Height Transformer: GridMapLayer
+      History Length: 1
+      Invert Rainbow: false
+      Max Color: 255; 0; 0
+      Max Intensity: 10
+      Min Color: 255; 255; 255
+      Min Intensity: 0
+      Name: Elevation Map Nav (test)
+      Show Grid Lines: true
       Topic:
+        Depth: 1
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /elevation_map_nav_test
+      Use Rainbow: false
+      Value: false
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: false
+      Name: Feet
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /feet_visualize
+      Value: false
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: false
+      Name: Filter Volumes
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
         Value: /filter_volumes
-        Depth: 5
-        Durability Policy: Volatile
-        Reliability Policy: Reliable
-    - Class: rviz_default_plugins/Odometry
-      Name: Odometry
-      Enabled: true
-      Topic:
-        Value: /odom
-        Depth: 5
-        Durability Policy: Volatile
-        Reliability Policy: Reliable
+      Value: false
+    - Angle Tolerance: 0.10000000149011612
+      Class: rviz_default_plugins/Odometry
+      Covariance:
+        Orientation:
+          Alpha: 0.5
+          Color: 255; 255; 127
+          Color Style: Unique
+          Frame: Local
+          Offset: 1
+          Scale: 1
+          Value: true
+        Position:
+          Alpha: 0.30000001192092896
+          Color: 204; 51; 204
+          Scale: 1
+          Value: true
+        Value: true
+      Enabled: false
       Keep: 100
-      Position Tolerance: 0.1
-      Angle Tolerance: 0.1
+      Name: Odometry
+      Position Tolerance: 0.10000000149011612
       Shape:
-        Value: Arrow
+        Alpha: 1
+        Axes Length: 1
+        Axes Radius: 0.10000000149011612
         Color: 255; 25; 0
-        Shaft Length: 0.3
-        Shaft Radius: 0.05
-        Head Length: 0.15
-        Head Radius: 0.1
+        Head Length: 0.15000000596046448
+        Head Radius: 0.10000000149011612
+        Shaft Length: 0.30000001192092896
+        Shaft Radius: 0.05000000074505806
+        Value: Arrow
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /odom
+      Value: false
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/PointCloud2
+      Color: 255; 255; 255
+      Color Transformer: Intensity
+      Decay Time: 0
+      Enabled: true
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: -0.4791589379310608
+      Min Color: 0; 0; 0
+      Min Intensity: -1.6618287563323975
+      Name: PointCloud2
+      Position Transformer: XYZ
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.009999999776482582
+      Style: Flat Squares
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /rbq/vision/elevation_map
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: true
+  Enabled: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: elevation
+    Frame Rate: 30
+  Name: root
   Tools:
     - Class: rviz_default_plugins/MoveCamera
     - Class: rviz_default_plugins/Select
     - Class: rviz_default_plugins/FocusCamera
     - Class: rviz_default_plugins/Measure
+      Line color: 128; 128; 0
+  Transformation:
+    Current:
+      Class: rviz_default_plugins/TF
+  Value: true
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Name: Current View
-      Distance: 25
-      Pitch: 0.6
-      Yaw: 0.8
+      Distance: 9.230464935302734
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.05999999865889549
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
       Focal Point:
-        X: 0
-        Y: 0
-        Z: 0
+        X: 3.0158963203430176
+        Y: -0.3512175679206848
+        Z: -0.12395206093788147
+      Focal Shape Fixed Size: true
+      Focal Shape Size: 0.05000000074505806
+      Invert Z Axis: false
+      Name: Current View
+      Near Clip Distance: 0.009999999776482582
+      Pitch: 0.6000001430511475
+      Target Frame: <Fixed Frame>
+      Value: Orbit (rviz_default_plugins)
+      Yaw: 2.249997615814209
+    Saved: ~
 Window Geometry:
-  Height: 900
-  Width: 1400
   Displays:
     collapsed: false
+  Height: 900
+  Hide Left Dock: false
+  Hide Right Dock: false
+  QMainWindow State: 000000ff00000000fd0000000100000000000001c900000326fc0200000002fb000000100044006900730070006c006100790073010000003f000001e3000000cc00fffffffb0000000a0056006900650077007301000002280000013d000000a900ffffff000003a90000032600000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Views:
+    collapsed: false
+  Width: 1400
+  X: 215
+  Y: 181
