@@ -27,6 +27,7 @@ setup(
     entry_points={
         'console_scripts': [
             'bag_player = bag_player.app:main',
+            'bag_picker = bag_player.bag_picker:main',
         ],
     },
 )

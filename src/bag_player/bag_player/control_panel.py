@@ -1,5 +1,7 @@
 """PyQt5 video-player style control panel for :class:`PlayerCore`."""
 
+import os
+
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import (
     QCheckBox,
@@ -47,7 +49,8 @@ class ControlPanel(QWidget):
         self.player = player
         self._scrubbing = False
 
-        self.setWindowTitle('ROS 2 Bag Player')
+        bag_name = os.path.basename(os.path.normpath(player.bag_uri))
+        self.setWindowTitle(f'ROS 2 Bag Player — {bag_name}')
         self.setMinimumWidth(640)
         self._build_ui()
 
@@ -63,6 +66,13 @@ class ControlPanel(QWidget):
     # ------------------------------------------------------------------ #
     def _build_ui(self):
         root = QVBoxLayout(self)
+
+        # --- which bag is loaded ----------------------------------------
+        bag_label = QLabel(self.player.bag_uri)
+        bag_label.setToolTip(self.player.bag_uri)
+        bag_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        bag_label.setStyleSheet('color: gray; font-size: 11px;')
+        root.addWidget(bag_label)
 
         # --- timeline ---------------------------------------------------
         self.time_label = QLabel('00:00.00 / 00:00.00')

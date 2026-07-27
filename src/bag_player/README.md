@@ -36,7 +36,23 @@ source install/setup.bash
 
 ## Run
 
-Easiest — launch the player **and** RViz2 (with sim time) together:
+Easiest — `run.sh` sources the workspace, lets you **pick which bag (log) folder
+to play** in a dialog, then launches the player **and** RViz2 (with sim time):
+
+```bash
+./run.sh                       # pick a bag under ~/ros2bag
+./run.sh --pick /other/root    # scan a different folder
+./run.sh --last                # replay the bag picked last time
+./run.sh /path/to/bag_records  # skip the dialog
+```
+
+The picker lists every directory containing a `metadata.yaml` (up to 4 levels
+below the search root) with duration, message/topic counts, size and record
+time; `Browse folder…` opens any other location. The storage id (`mcap` /
+`sqlite3`) is read from the selected bag, so `.db3` bags need no extra flag.
+Set `BAG_SEARCH_ROOT` to change the default search root.
+
+Or drive the launch file directly:
 
 ```bash
 ros2 launch bag_player player.launch.py bag:=/home/gs-omen/ros2bag/bag_records
@@ -46,7 +62,15 @@ Player only (visualize however you like), or without RViz:
 
 ```bash
 ros2 run bag_player bag_player --bag /home/gs-omen/ros2bag/bag_records
+# omit --bag to choose the bag in the same dialog:
+ros2 run bag_player bag_player --bag-root ~/ros2bag
 # or:  ros2 launch bag_player player.launch.py bag:=/path/to/bag rviz:=false
+```
+
+The picker can also be run on its own — it prints `<path><TAB><storage_id>`:
+
+```bash
+ros2 run bag_player bag_picker --root ~/ros2bag
 ```
 
 For old `.db3` bags use `--storage sqlite3` (or `storage:=sqlite3` in the launch).
@@ -86,6 +110,7 @@ Then add displays for the topics you care about (this bag: `/ouster/points`,
 bag_player/
   bag_player/player_core.py    # reader + publishers + playback engine (rclpy)
   bag_player/control_panel.py  # PyQt5 timeline / transport / speed UI
+  bag_player/bag_picker.py     # startup dialog: choose which bag folder to play
   bag_player/app.py            # entry point: wires engine + Qt together
   launch/player.launch.py      # player (+ RViz2 with use_sim_time)
   rviz/bag_player.rviz         # RViz2 config for this bag's topics

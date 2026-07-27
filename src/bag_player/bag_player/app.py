@@ -22,8 +22,12 @@ def _parse_args(argv):
     parser = argparse.ArgumentParser(
         prog='bag_player',
         description='Video-player style controller for a ROS 2 bag.')
-    parser.add_argument('--bag', '-b', required=True,
-                        help='Path to the bag directory (the folder with metadata.yaml).')
+    parser.add_argument('--bag', '-b', default=None,
+                        help='Path to the bag directory (the folder with '
+                             'metadata.yaml). Omit to pick one in a dialog.')
+    parser.add_argument('--bag-root', default='~/ros2bag',
+                        help='Where the selection dialog looks for bags '
+                             '(default: ~/ros2bag).')
     parser.add_argument('--storage', '-s', default='mcap',
                         help='Storage id (default: mcap; use sqlite3 for .db3 bags).')
     # Drop ROS args injected by ros2 launch / run.
@@ -36,6 +40,19 @@ def main(argv=None):
     rclpy.init(args=None)
     args = _parse_args(argv)
 
+    storage_id = args.storage
+    if not args.bag:
+        # No bag on the command line: let the user choose one.
+        from bag_player.bag_picker import pick_with_gui
+
+        chosen = pick_with_gui(args.bag_root)
+        if chosen is None:
+            print('[bag_player] No bag selected.', file=sys.stderr)
+            rclpy.shutdown()
+            return 1
+        args.bag = chosen.path
+        storage_id = chosen.storage_id
+
     bag_uri = os.path.abspath(os.path.expanduser(args.bag))
     if not os.path.isdir(bag_uri):
         print(f'[bag_player] Bag directory not found: {bag_uri}', file=sys.stderr)
@@ -43,7 +60,7 @@ def main(argv=None):
         return 1
 
     try:
-        player = PlayerCore(bag_uri, storage_id=args.storage)
+        player = PlayerCore(bag_uri, storage_id=storage_id)
     except Exception as exc:
         print(f'[bag_player] Failed to open bag: {exc}', file=sys.stderr)
         rclpy.shutdown()
