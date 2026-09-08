@@ -10,12 +10,15 @@ from PyQt5.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QSlider,
     QVBoxLayout,
     QWidget,
 )
+
+from bag_player.bag_picker import pick_with_gui
 
 # Signed speed presets shown as buttons (negative = reverse).
 SPEED_PRESETS = [-8.0, -4.0, -2.0, -1.0, -0.5, 0.5, 1.0, 2.0, 4.0, 8.0]
@@ -30,17 +33,40 @@ def _fmt_time(seconds):
 
 
 class SeekSlider(QSlider):
-    """A horizontal slider that jumps to the clicked position (no paging)."""
+    """A horizontal slider where a click jumps to that position and dragging
+    scrubs.
+
+    Press/release go through ``setSliderDown()`` so ``sliderPressed`` and
+    ``sliderReleased`` always fire in pairs — emitting ``sliderPressed`` by
+    hand (without the slider ever being down) leaves the panel's scrubbing
+    flag stuck and the bar stops following playback.
+    """
+
+    def _value_at(self, x):
+        ratio = min(1.0, max(0.0, x / max(1, self.width())))
+        return self.minimum() + round(ratio * (self.maximum() - self.minimum()))
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton and self.maximum() > self.minimum():
-            ratio = event.pos().x() / max(1, self.width())
-            value = self.minimum() + round(ratio * (self.maximum() - self.minimum()))
-            self.setValue(int(value))
-            self.sliderPressed.emit()
+            self.setSliderDown(True)   # emits sliderPressed (scrubbing starts)
+            self.setValue(int(self._value_at(event.pos().x())))
             event.accept()
             return
         super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self.isSliderDown() and (event.buttons() & Qt.LeftButton):
+            self.setValue(int(self._value_at(event.pos().x())))
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton and self.isSliderDown():
+            self.setSliderDown(False)  # emits sliderReleased (scrubbing ends)
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
 
 class ControlPanel(QWidget):
@@ -48,11 +74,11 @@ class ControlPanel(QWidget):
         super().__init__()
         self.player = player
         self._scrubbing = False
+        self._bag_generation = player.get_bag_generation()
 
-        bag_name = os.path.basename(os.path.normpath(player.bag_uri))
-        self.setWindowTitle(f'ROS 2 Bag Player — {bag_name}')
         self.setMinimumWidth(640)
         self._build_ui()
+        self._sync_bag_header()
 
         # Poll the engine to refresh the timeline / labels.
         self._timer = QTimer(self)
@@ -68,11 +94,16 @@ class ControlPanel(QWidget):
         root = QVBoxLayout(self)
 
         # --- which bag is loaded ----------------------------------------
-        bag_label = QLabel(self.player.bag_uri)
-        bag_label.setToolTip(self.player.bag_uri)
-        bag_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        bag_label.setStyleSheet('color: gray; font-size: 11px;')
-        root.addWidget(bag_label)
+        bag_row = QHBoxLayout()
+        self.bag_label = QLabel()
+        self.bag_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.bag_label.setStyleSheet('color: gray; font-size: 11px;')
+        bag_row.addWidget(self.bag_label, 1)
+        btn_open = QPushButton('Open bag…')
+        btn_open.setFocusPolicy(Qt.NoFocus)  # keep Space as play/pause
+        btn_open.clicked.connect(self._on_open_bag)
+        bag_row.addWidget(btn_open)
+        root.addLayout(bag_row)
 
         # --- timeline ---------------------------------------------------
         self.time_label = QLabel('00:00.00 / 00:00.00')
@@ -82,6 +113,9 @@ class ControlPanel(QWidget):
 
         self.slider = SeekSlider(Qt.Horizontal)
         self.slider.setRange(0, SLIDER_TICKS)
+        # Never let the slider take keyboard focus: a focused QSlider consumes
+        # the arrow keys, which are the panel's frame-step shortcuts.
+        self.slider.setFocusPolicy(Qt.NoFocus)
         self.slider.sliderPressed.connect(self._on_scrub_start)
         self.slider.sliderReleased.connect(self._on_scrub_end)
         self.slider.valueChanged.connect(self._on_slider_value)
@@ -143,10 +177,15 @@ class ControlPanel(QWidget):
         # --- per-topic toggles -----------------------------------------
         topics_box = QGroupBox('Topics')
         topics_outer = QVBoxLayout(topics_box)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setMaximumHeight(180)
+        self._topics_scroll = QScrollArea()
+        self._topics_scroll.setWidgetResizable(True)
+        self._topics_scroll.setFrameShape(QFrame.NoFrame)
+        self._topics_scroll.setMaximumHeight(180)
+        self._populate_topics()
+        topics_outer.addWidget(self._topics_scroll)
+        root.addWidget(topics_box)
+
+    def _populate_topics(self):
         inner = QWidget()
         inner_layout = QVBoxLayout(inner)
         for topic in sorted(self.player.topic_types):
@@ -156,9 +195,13 @@ class ControlPanel(QWidget):
             cb.toggled.connect(lambda state, t=topic: self.player.set_topic_enabled(t, state))
             inner_layout.addWidget(cb)
         inner_layout.addStretch(1)
-        scroll.setWidget(inner)
-        topics_outer.addWidget(scroll)
-        root.addWidget(topics_box)
+        self._topics_scroll.setWidget(inner)  # setWidget drops the old one
+
+    def _sync_bag_header(self):
+        bag_name = os.path.basename(os.path.normpath(self.player.bag_uri))
+        self.setWindowTitle(f'ROS 2 Bag Player — {bag_name}')
+        self.bag_label.setText(self.player.bag_uri)
+        self.bag_label.setToolTip(self.player.bag_uri)
 
     # ------------------------------------------------------------------ #
     # Slider / scrubbing
@@ -174,6 +217,40 @@ class ControlPanel(QWidget):
         # not from our own periodic refresh.
         if self._scrubbing:
             self.player.seek_fraction(value / SLIDER_TICKS)
+
+    # ------------------------------------------------------------------ #
+    # Switching bags at runtime
+    # ------------------------------------------------------------------ #
+    def _on_open_bag(self):
+        self.player.pause()
+        self._update_play_button()
+        root = os.environ.get('BAG_SEARCH_ROOT', '~/ros2bag')
+        bag = pick_with_gui(root, initial=self.player.bag_uri)
+        if bag is not None:
+            # Async: the play thread swaps the reader; _refresh() picks up the
+            # generation bump (or the error) and updates the widgets.
+            self.player.request_load(bag.path, bag.storage_id)
+
+    def _on_bag_changed(self):
+        # A switch must always re-park the bar, even if a slider release went
+        # missing (e.g. the mouse was let go outside the window).
+        self._scrubbing = False
+        self._sync_bag_header()
+        self._populate_topics()
+        self._update_play_button()
+        self._remember_bag()
+
+    def _remember_bag(self):
+        """Keep `run.sh --last` and the picker default in sync with switches."""
+        cache = os.path.join(
+            os.environ.get('XDG_CACHE_HOME', os.path.expanduser('~/.cache')),
+            'bag_player', 'last_bag')
+        try:
+            os.makedirs(os.path.dirname(cache), exist_ok=True)
+            with open(cache, 'w') as f:
+                f.write(f'{self.player.bag_uri}\t{self.player.storage_id}\n')
+        except OSError:
+            pass
 
     # ------------------------------------------------------------------ #
     # Transport / speed
@@ -218,6 +295,14 @@ class ControlPanel(QWidget):
     # Periodic refresh
     # ------------------------------------------------------------------ #
     def _refresh(self):
+        generation = self.player.get_bag_generation()
+        if generation != self._bag_generation:
+            self._bag_generation = generation
+            self._on_bag_changed()
+        error = self.player.take_load_error()
+        if error:
+            QMessageBox.warning(self, 'Could not open bag', error)
+
         frac, elapsed, total = self.player.get_position()
         if not self._scrubbing:
             self.slider.blockSignals(True)

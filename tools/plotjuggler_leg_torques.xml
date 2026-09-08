@@ -1,0 +1,64 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<root>
+ <tabbed_widget parent="main_window" name="Main Window">
+  <Tab containers="1" tab_name="Leg Torques">
+   <Container>
+    <DockSplitter sizes="0.5;0.5" count="2" orientation="-">
+     <DockSplitter sizes="0.5;0.5" count="2" orientation="|">
+      <DockArea name="HR (hind-right)">
+       <plot flip_x="false" flip_y="false" mode="TimeSeries" style="Lines">
+        <range right="1" left="0" bottom="-1" top="1"/>
+        <limitY/>
+        <curve name="/joint_states/joint0_HRR/effort" color="#1f77b4"/>
+        <curve name="/joint_states/joint1_HRP/effort" color="#2ca02c"/>
+        <curve name="/joint_states/joint2_HRK/effort" color="#d62728"/>
+        <curve name="/joint_states_desired/joint0_HRR/effort" color="#aec7e8"/>
+        <curve name="/joint_states_desired/joint1_HRP/effort" color="#98df8a"/>
+        <curve name="/joint_states_desired/joint2_HRK/effort" color="#ff9896"/>
+       </plot>
+      </DockArea>
+      <DockArea name="HL (hind-left)">
+       <plot flip_x="false" flip_y="false" mode="TimeSeries" style="Lines">
+        <range right="1" left="0" bottom="-1" top="1"/>
+        <limitY/>
+        <curve name="/joint_states/joint3_HLR/effort" color="#1f77b4"/>
+        <curve name="/joint_states/joint4_HLP/effort" color="#2ca02c"/>
+        <curve name="/joint_states/joint5_HLK/effort" color="#d62728"/>
+        <curve name="/joint_states_desired/joint3_HLR/effort" color="#aec7e8"/>
+        <curve name="/joint_states_desired/joint4_HLP/effort" color="#98df8a"/>
+        <curve name="/joint_states_desired/joint5_HLK/effort" color="#ff9896"/>
+       </plot>
+      </DockArea>
+     </DockSplitter>
+     <DockSplitter sizes="0.5;0.5" count="2" orientation="|">
+      <DockArea name="FR (front-right)">
+       <plot flip_x="false" flip_y="false" mode="TimeSeries" style="Lines">
+        <range right="1" left="0" bottom="-1" top="1"/>
+        <limitY/>
+        <curve name="/joint_states/joint6_FRR/effort" color="#1f77b4"/>
+        <curve name="/joint_states/joint7_FRP/effort" color="#2ca02c"/>
+        <curve name="/joint_states/joint8_FRK/effort" color="#d62728"/>
+        <curve name="/joint_states_desired/joint6_FRR/effort" color="#aec7e8"/>
+        <curve name="/joint_states_desired/joint7_FRP/effort" color="#98df8a"/>
+        <curve name="/joint_states_desired/joint8_FRK/effort" color="#ff9896"/>
+       </plot>
+      </DockArea>
+      <DockArea name="FL (front-left)">
+       <plot flip_x="false" flip_y="false" mode="TimeSeries" style="Lines">
+        <range right="1" left="0" bottom="-1" top="1"/>
+        <limitY/>
+        <curve name="/joint_states/joint9_FLR/effort" color="#1f77b4"/>
+        <curve name="/joint_states/joint10_FLP/effort" color="#2ca02c"/>
+        <curve name="/joint_states/joint11_FLK/effort" color="#d62728"/>
+        <curve name="/joint_states_desired/joint9_FLR/effort" color="#aec7e8"/>
+        <curve name="/joint_states_desired/joint10_FLP/effort" color="#98df8a"/>
+        <curve name="/joint_states_desired/joint11_FLK/effort" color="#ff9896"/>
+       </plot>
+      </DockArea>
+     </DockSplitter>
+    </DockSplitter>
+   </Container>
+  </Tab>
+ </tabbed_widget>
+ <use_relative_time_offset enabled="1"/>
+</root>

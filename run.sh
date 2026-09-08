@@ -10,11 +10,16 @@
 #
 # Any `name:=value` argument is forwarded to `ros2 launch` untouched, so
 # `./run.sh rviz:=false` still opens the picker.
+#
+# The replay runs network-isolated (ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST)
+# so a live robot on the subnet cannot inject "now"-stamped /tf into RViz.
+# Set BAG_PLAYER_DISCOVERY=SUBNET to deliberately join the network instead.
 set -euo pipefail
 
 # --- defaults ---------------------------------------------------------------
 DEFAULT_BAG="/home/gs-omen/ros2bag/bag_records_0707_elevation_map/bag_records"
-BAG_SEARCH_ROOT="${BAG_SEARCH_ROOT:-$HOME/ros2bag}"
+# Exported so the in-app "Open bag…" picker scans the same root.
+export BAG_SEARCH_ROOT="${BAG_SEARCH_ROOT:-$HOME/ros2bag}"
 ROS_DISTRO_SETUP="/opt/ros/jazzy/setup.bash"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LAST_BAG_FILE="${XDG_CACHE_HOME:-$HOME/.cache}/bag_player/last_bag"
@@ -69,6 +74,14 @@ source "$ROS_DISTRO_SETUP"
 source "$SCRIPT_DIR/install/setup.bash"
 set -u
 
+# --- network isolation -------------------------------------------------------
+# The user environment is ROS_DOMAIN_ID=42 + SUBNET discovery, which the live
+# RBQ10 stack also uses. Its /tf is stamped "now", so once RViz's tf cache has
+# seen it, every bag transform (days older) is rejected as TF_OLD_DATA and the
+# robot model freezes. The launch is self-contained (player + RSP + RViz), so
+# keep the replay session on this host only unless explicitly overridden.
+export ROS_AUTOMATIC_DISCOVERY_RANGE="${BAG_PLAYER_DISCOVERY:-LOCALHOST}"
+
 # --- bag selection UI -------------------------------------------------------
 if [[ "$PICK" -eq 1 ]]; then
   INITIAL="$DEFAULT_BAG"
@@ -116,11 +129,35 @@ if [[ ! " $* " == *" storage:="* ]]; then
   [[ -n "$STORAGE" ]] && EXTRA+=("storage:=$STORAGE")
 fi
 
+# --- forwarded launch args: expand `~` in values ------------------------------
+# `rviz_config:=~/foo.rviz` reaches us with the tilde intact — bash only
+# expands `~` at the start of a word (or in a real assignment), and
+# `name:=value` is neither. RViz then looks for a file literally named
+# "~/foo.rviz", finds nothing, and silently opens with an EMPTY display list —
+# which presents as "the config didn't save", not as a path error.
+ARGS=()
+for a in "$@"; do
+  [[ "$a" == *:=\~/* ]] && a="${a/:=\~\//:=$HOME/}"
+  ARGS+=("$a")
+done
+set -- ${ARGS[@]+"${ARGS[@]}"}
+
+# --- per-bag RViz config -----------------------------------------------------
+# A bag can carry its own view: drop a `view.rviz` beside its metadata.yaml and
+# it is loaded automatically. Saves passing rviz_config:= by hand for bags that
+# need a specific layout (e.g. the gap-detection replays, which need the
+# gap_plane / gap_lines displays). An explicit rviz_config:= still wins.
+if [[ ! " $* " == *" rviz_config:="* && -f "$BAG/view.rviz" ]]; then
+  EXTRA+=("rviz_config:=$BAG/view.rviz")
+  echo "[run.sh] rviz config: $BAG/view.rviz (from the bag)"
+fi
+
 # --- remember the choice for `--last` / the next picker default --------------
 mkdir -p "$(dirname "$LAST_BAG_FILE")"
 printf '%s\t%s\n' "$BAG" "$STORAGE" > "$LAST_BAG_FILE"
 
 # --- launch -----------------------------------------------------------------
 echo "[run.sh] bag: $BAG${STORAGE:+  (storage: $STORAGE)}"
+echo "[run.sh] discovery: $ROS_AUTOMATIC_DISCOVERY_RANGE (domain ${ROS_DOMAIN_ID:-0})"
 exec ros2 launch bag_player player.launch.py bag:="$BAG" \
      ${EXTRA[@]+"${EXTRA[@]}"} "$@"

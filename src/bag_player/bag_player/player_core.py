@@ -57,21 +57,12 @@ class PlayerCore(Node):
         self.end_ns = self.start_ns + self.duration_ns
         self.message_count = int(meta.message_count)
 
-        self.topic_types = {}
-        for info in self._reader.get_all_topics_and_types():
-            self.topic_types[info.name] = info.type
-
         # --- build publishers + message classes --------------------------
+        self.topic_types = {}
         self._pubs = {}
         self._msg_classes = {}
-        for name, type_str in sorted(self.topic_types.items()):
-            try:
-                cls = get_message(type_str)
-            except Exception as exc:  # unknown message type -> skip the topic
-                self.get_logger().warn(f'No type support for {name} ({type_str}): {exc}')
-                continue
-            self._msg_classes[name] = cls
-            self._pubs[name] = self.create_publisher(cls, name, self._qos_for(name))
+        self._sync_publishers({info.name: info.type
+                               for info in self._reader.get_all_topics_and_types()})
 
         clock_qos = QoSProfile(
             depth=10,
@@ -90,6 +81,9 @@ class PlayerCore(Node):
         self._enabled = set(self._pubs.keys())
         self._seek_req = None      # absolute bag ns requested by the GUI
         self._step_req = None      # signed seconds to step while paused
+        self._load_req = None      # (bag_uri, storage_id) requested by the GUI
+        self._load_error = None    # message of the last failed load, for the GUI
+        self._bag_generation = 0   # bumped on every successful bag (re)load
         self._running = True
 
         # --- reader cursor state (engine thread only) --------------------
@@ -109,12 +103,32 @@ class PlayerCore(Node):
     # ------------------------------------------------------------------ #
     # Setup helpers
     # ------------------------------------------------------------------ #
-    def _make_reader(self):
+    def _make_reader(self, bag_uri=None, storage_id=None):
         reader = rosbag2_py.SequentialReader()
-        storage = rosbag2_py.StorageOptions(uri=self.bag_uri, storage_id=self.storage_id)
+        storage = rosbag2_py.StorageOptions(uri=bag_uri or self.bag_uri,
+                                            storage_id=storage_id or self.storage_id)
         converter = rosbag2_py.ConverterOptions('', '')
         reader.open(storage, converter)
         return reader
+
+    def _sync_publishers(self, new_types):
+        """Make the publishers match ``new_types``, reusing unchanged topics."""
+        for name in list(self._pubs):
+            if new_types.get(name) == self.topic_types.get(name):
+                continue
+            self._msg_classes.pop(name, None)
+            self.destroy_publisher(self._pubs.pop(name))
+        for name, type_str in sorted(new_types.items()):
+            if name in self._pubs:
+                continue
+            try:
+                cls = get_message(type_str)
+            except Exception as exc:  # unknown message type -> skip the topic
+                self.get_logger().warn(f'No type support for {name} ({type_str}): {exc}')
+                continue
+            self._msg_classes[name] = cls
+            self._pubs[name] = self.create_publisher(cls, name, self._qos_for(name))
+        self.topic_types = new_types
 
     def _qos_for(self, topic):
         # tf_static is conventionally latched; everything else is volatile.
@@ -161,6 +175,45 @@ class PlayerCore(Node):
         if self._pending is None and self._reader.has_next():
             self._pending = self._reader.read_next()
         return self._pending
+
+    def _do_load(self, bag_uri, storage_id):
+        """Switch to another bag (play thread only). Keeps the old one on failure."""
+        try:
+            reader = self._make_reader(bag_uri, storage_id)
+            meta = reader.get_metadata()
+        except Exception as exc:
+            self.get_logger().error(f'Could not open bag {bag_uri}: {exc}')
+            with self._lock:
+                self._load_error = f'{bag_uri}\n\n{exc}'
+            return
+
+        self._reader = reader
+        self.bag_uri = bag_uri
+        self.storage_id = storage_id
+        self.start_ns = int(meta.starting_time.nanoseconds)
+        self.duration_ns = int(meta.duration.nanoseconds)
+        self.end_ns = self.start_ns + self.duration_ns
+        self.message_count = int(meta.message_count)
+        self._sync_publishers({info.name: info.type
+                               for info in reader.get_all_topics_and_types()})
+
+        with self._lock:
+            self._bag_time_ns = self.start_ns
+            self._enabled = set(self._pubs.keys())
+            self._paused = True
+            self._seek_req = None
+            self._step_req = None
+            self._bag_generation += 1
+
+        # Same startup sequence as __init__: latch the new statics and park at
+        # the start. When the new bag lies earlier in time, the /clock jump
+        # also makes RViz drop everything cached from the previous bag.
+        self._publish_static_once()
+        self._reposition(self.start_ns, 1)
+        self._publish_clock(self.start_ns)
+        self.get_logger().info(
+            f'Switched to {bag_uri} ({self.message_count} messages, '
+            f'{self.duration_ns / 1e9:.1f} s)')
 
     def _publish_msg(self, topic, data):
         cls = self._msg_classes.get(topic)
@@ -214,10 +267,17 @@ class PlayerCore(Node):
                 loop = self._loop
                 seek_req = self._seek_req
                 step_req = self._step_req
+                load_req = self._load_req
                 self._seek_req = None
                 self._step_req = None
+                self._load_req = None
                 enabled = frozenset(self._enabled)
                 bag_time = self._bag_time_ns
+
+            # --- switch to another bag -----------------------------------
+            if load_req is not None:
+                self._do_load(*load_req)
+                continue
 
             # --- explicit seek (scrub / click) ---------------------------
             if seek_req is not None:
@@ -338,6 +398,26 @@ class PlayerCore(Node):
             else:
                 self._enabled.discard(topic)
 
+    def request_load(self, bag_uri, storage_id='mcap'):
+        """Ask the play thread to switch to another bag (asynchronous).
+
+        Success bumps ``get_bag_generation()``; failure keeps the current bag
+        and leaves a message for ``take_load_error()``.
+        """
+        with self._lock:
+            self._paused = True
+            self._load_req = (bag_uri, storage_id)
+
+    def get_bag_generation(self):
+        with self._lock:
+            return self._bag_generation
+
+    def take_load_error(self):
+        """Return-and-clear the last failed load message (None when none)."""
+        with self._lock:
+            error, self._load_error = self._load_error, None
+            return error
+
     def get_position(self):
         """Return (fraction 0..1, elapsed_seconds, total_seconds)."""
         with self._lock:
@@ -345,7 +425,9 @@ class PlayerCore(Node):
         elapsed = (t - self.start_ns) / NS_PER_S
         total = self.duration_ns / NS_PER_S
         frac = (t - self.start_ns) / self.duration_ns if self.duration_ns else 0.0
-        return frac, elapsed, total
+        # A bag switch updates start/duration and the clock non-atomically, so
+        # clamp the one refresh tick that may see a mixed snapshot.
+        return max(0.0, min(1.0, frac)), elapsed, total
 
     def shutdown(self):
         self._running = False
