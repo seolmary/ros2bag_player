@@ -12,6 +12,7 @@ import sys
 import threading
 
 import rclpy
+from ament_index_python.packages import get_package_share_directory
 from rclpy.executors import SingleThreadedExecutor
 
 from bag_player.control_panel import ControlPanel
@@ -76,6 +77,9 @@ def main(argv=None):
     from PyQt5.QtWidgets import QApplication
 
     app = QApplication(sys.argv[:1])
+    from PyQt5.QtGui import QIcon
+    app.setWindowIcon(QIcon(os.path.join(
+        get_package_share_directory('bag_player'), 'icons', 'bag_player.svg')))
     # Let Ctrl-C in the terminal close the GUI.
     signal.signal(signal.SIGINT, signal.SIG_DFL)
 

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <rect x="8" y="8" width="240" height="240" rx="48" fill="#1e2a3a"/>
+  <!-- play triangle -->
+  <path d="M96 64 L184 120 L96 176 Z" fill="#ffffff"/>
+  <!-- timeline with playhead -->
+  <rect x="48" y="200" width="160" height="10" rx="5" fill="#4a5a70"/>
+  <rect x="48" y="200" width="88" height="10" rx="5" fill="#3ddc97"/>
+  <circle cx="136" cy="205" r="11" fill="#ffffff"/>
+  <!-- ROS-ish dots -->
+  <g fill="#3ddc97">
+    <circle cx="40" cy="40" r="6"/><circle cx="60" cy="40" r="6"/><circle cx="80" cy="40" r="6"/>
+    <circle cx="40" cy="60" r="6"/><circle cx="60" cy="60" r="6"/><circle cx="80" cy="60" r="6"/>
+  </g>
+</svg>
