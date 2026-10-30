@@ -29,6 +29,7 @@ from rclpy.qos import (
 )
 from rclpy.serialization import deserialize_message
 from rosgraph_msgs.msg import Clock
+from sensor_msgs.msg import CompressedImage
 from rosidl_runtime_py.utilities import get_message
 
 NS_PER_S = 1_000_000_000
@@ -37,6 +38,17 @@ NS_PER_S = 1_000_000_000
 # publish burst inside a single engine tick.
 MAX_ADVANCE_NS = NS_PER_S          # never advance more than 1 s of bag time per tick
 MAX_MSGS_PER_TICK = 800            # drop the rest if a tick would publish more than this
+BACKWARD_CLOCK_PERIOD_S = 0.25     # min wall time between backward /clock steps (each one resets every RViz display)
+
+PNG_MAGIC = b'\x89PNG\r\n\x1a\n'
+
+
+def _fix_compressed_format(msg):
+    """Bare 'png' 16-bit greyscale -> '16UC1; png' so image_transport decodes depth correctly."""
+    if ';' in msg.format or len(msg.data) < 26 or bytes(msg.data[:8]) != PNG_MAGIC:
+        return
+    if msg.data[24] == 16 and msg.data[25] == 0:  # IHDR bit depth, colour type
+        msg.format = '16UC1; png'
 
 
 class PlayerCore(Node):
@@ -56,6 +68,8 @@ class PlayerCore(Node):
         self.duration_ns = int(meta.duration.nanoseconds)
         self.end_ns = self.start_ns + self.duration_ns
         self.message_count = int(meta.message_count)
+        self.topic_counts = {t.topic_metadata.name: int(t.message_count)
+                             for t in meta.topics_with_message_count}
 
         # --- build publishers + message classes --------------------------
         self.topic_types = {}
@@ -80,7 +94,7 @@ class PlayerCore(Node):
         self._loop = False
         self._enabled = set(self._pubs.keys())
         self._seek_req = None      # absolute bag ns requested by the GUI
-        self._step_req = None      # signed seconds to step while paused
+        self._step_req = None      # (direction, frame topic or None) to step while paused
         self._load_req = None      # (bag_uri, storage_id) requested by the GUI
         self._load_error = None    # message of the last failed load, for the GUI
         self._bag_generation = 0   # bumped on every successful bag (re)load
@@ -89,6 +103,9 @@ class PlayerCore(Node):
         # --- reader cursor state (engine thread only) --------------------
         self._reader_dir = 1
         self._pending = None       # one-message lookahead: (topic, data, t_ns)
+        self._frame_ns = None      # bag time of the frame the last step landed on
+        self._clock_ns = 0
+        self._clock_back_wall = 0.0
 
         # Latch static transforms so RViz can resolve frames after any seek.
         self._publish_static_once()
@@ -194,6 +211,8 @@ class PlayerCore(Node):
         self.duration_ns = int(meta.duration.nanoseconds)
         self.end_ns = self.start_ns + self.duration_ns
         self.message_count = int(meta.message_count)
+        self.topic_counts = {t.topic_metadata.name: int(t.message_count)
+                             for t in meta.topics_with_message_count}
         self._sync_publishers({info.name: info.type
                                for info in reader.get_all_topics_and_types()})
 
@@ -221,7 +240,10 @@ class PlayerCore(Node):
         if cls is None or pub is None:
             return
         try:
-            pub.publish(deserialize_message(data, cls))
+            msg = deserialize_message(data, cls)
+            if cls is CompressedImage:
+                _fix_compressed_format(msg)
+            pub.publish(msg)
         except Exception as exc:
             self.get_logger().warn(f'Publish failed on {topic}: {exc}',
                                    throttle_duration_sec=5.0)
@@ -245,8 +267,30 @@ class PlayerCore(Node):
                 self._publish_msg(topic, data)
                 published += 1
 
+    def _step_frame(self, bag_time, direction, frame_topic, enabled):
+        """Publish up to and including the next ``frame_topic`` message; return its time."""
+        shown = bag_time == self._frame_ns
+        while True:
+            pending = self._ensure_pending()
+            if pending is None:
+                return self.end_ns if direction > 0 else self.start_ns
+            topic, data, t = pending
+            self._pending = None
+            if topic in enabled:
+                self._publish_msg(topic, data)
+            ahead = (t - bag_time) * direction
+            if (ahead > 0 or (ahead == 0 and not shown)) and frame_topic in (None, topic):
+                self._frame_ns = t
+                return t
+
     def _publish_clock(self, t_ns):
         t_ns = int(t_ns)
+        if t_ns < self._clock_ns:
+            now = time.monotonic()
+            if now - self._clock_back_wall < BACKWARD_CLOCK_PERIOD_S:
+                return
+            self._clock_back_wall = now
+        self._clock_ns = t_ns
         self._clock_pub.publish(Clock(clock=TimeMsg(sec=t_ns // NS_PER_S,
                                                     nanosec=t_ns % NS_PER_S)))
 
@@ -287,15 +331,12 @@ class PlayerCore(Node):
                 with self._lock:
                     self._bag_time_ns = bag_time
 
-            # --- single step while paused --------------------------------
+            # --- single frame step while paused --------------------------
             if step_req is not None:
-                step_dir = 1 if step_req >= 0 else -1
+                step_dir, frame_topic = step_req
                 if self._reader_dir != step_dir:
                     self._reposition(bag_time, step_dir)
-                target = max(self.start_ns,
-                             min(self.end_ns, bag_time + int(step_req * NS_PER_S)))
-                self._publish_range(target, step_dir, enabled)
-                bag_time = target
+                bag_time = self._step_frame(bag_time, step_dir, frame_topic, enabled)
                 self._publish_clock(bag_time)
                 with self._lock:
                     self._bag_time_ns = bag_time
@@ -381,11 +422,11 @@ class PlayerCore(Node):
         with self._lock:
             self._seek_req = self.start_ns + int(max(0.0, seconds) * NS_PER_S)
 
-    def step(self, seconds):
-        """Move by ``seconds`` (signed) once, publishing that interval. Pauses."""
+    def step_frame(self, direction, topic=None):
+        """Move to the next (+1) / previous (-1) message of ``topic`` (any if None). Pauses."""
         with self._lock:
             self._paused = True
-            self._step_req = float(seconds)
+            self._step_req = (1 if direction > 0 else -1, topic)
 
     def set_loop(self, enabled):
         with self._lock:

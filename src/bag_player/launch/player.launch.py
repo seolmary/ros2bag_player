@@ -7,6 +7,7 @@ Usage:
 
 import os
 
+import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
@@ -14,6 +15,53 @@ from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
+
+DISPLAY_FOR_TYPE = {
+    'sensor_msgs/msg/PointCloud2': 'rviz_default_plugins/PointCloud2',
+    'sensor_msgs/msg/LaserScan': 'rviz_default_plugins/LaserScan',
+    'sensor_msgs/msg/Image': 'rviz_default_plugins/Image',
+    'sensor_msgs/msg/CompressedImage': 'rviz_default_plugins/Image',
+    'grid_map_msgs/msg/GridMap': 'grid_map_rviz_plugin/GridMap',
+    'visualization_msgs/msg/Marker': 'rviz_default_plugins/Marker',
+    'visualization_msgs/msg/MarkerArray': 'rviz_default_plugins/MarkerArray',
+    'nav_msgs/msg/Odometry': 'rviz_default_plugins/Odometry',
+    'nav_msgs/msg/Path': 'rviz_default_plugins/Path',
+    'nav_msgs/msg/OccupancyGrid': 'rviz_default_plugins/Map',
+    'geometry_msgs/msg/PoseStamped': 'rviz_default_plugins/Pose',
+    'geometry_msgs/msg/PoseArray': 'rviz_default_plugins/PoseArray',
+}
+
+
+def rviz_config_for_bag(bag_dir, base_config, out_path):
+    """Write base_config to out_path with its displays matched to the bag's topics."""
+    with open(os.path.join(bag_dir, 'metadata.yaml')) as f:
+        meta = yaml.safe_load(f)['rosbag2_bagfile_information']
+    wanted = {}
+    for entry in meta['topics_with_message_count']:
+        t = entry['topic_metadata']
+        if t['type'] in DISPLAY_FOR_TYPE:
+            wanted[t['name']] = DISPLAY_FOR_TYPE[t['type']]
+
+    with open(base_config) as f:
+        cfg = yaml.safe_load(f)
+    vm = cfg['Visualization Manager']
+
+    def topic_of(d):
+        return (d.get('Topic') or {}).get('Value')
+
+    displays = [d for d in vm['Displays']
+                if topic_of(d) is None or wanted.get(topic_of(d)) == d.get('Class')]
+    have = {topic_of(d) for d in displays}
+    for topic in sorted(wanted):
+        if topic not in have:
+            displays.append({'Class': wanted[topic], 'Name': topic, 'Enabled': True,
+                             'Topic': {'Value': topic}, 'Value': True})
+    vm['Displays'] = displays
+
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    with open(out_path, 'w') as f:
+        yaml.safe_dump(cfg, f, sort_keys=False)
+    return out_path
 
 
 def generate_launch_description():
@@ -60,6 +108,31 @@ def generate_launch_description():
             ),
         ]
 
+    def _launch_rviz(context):
+        bag_dir = bag.perform(context)
+        base = rviz_config.perform(context)
+        out = os.path.join(os.path.expanduser('~/.cache/bag_player/rviz'),
+                           os.path.basename(os.path.normpath(bag_dir)) + '.rviz')
+        if base == default_rviz and os.path.exists(out):
+            base = out
+        try:
+            config = rviz_config_for_bag(bag_dir, base, out)
+            print(f'[player.launch] rviz config: {config} (base: {base})')
+        except Exception as exc:
+            print(f'[player.launch] could not generate rviz config ({exc}); using {base}')
+            config = base
+        return [
+            Node(
+                package='rviz2',
+                executable='rviz2',
+                name='rviz2',
+                output='screen',
+                condition=IfCondition(use_rviz),
+                arguments=['-d', config],
+                parameters=[{'use_sim_time': True}],
+            ),
+        ]
+
     return LaunchDescription([
         DeclareLaunchArgument('bag', description='Path to the bag directory.'),
         DeclareLaunchArgument('storage', default_value='mcap',
@@ -83,13 +156,5 @@ def generate_launch_description():
 
         OpaqueFunction(function=_load_robot_description),
 
-        Node(
-            package='rviz2',
-            executable='rviz2',
-            name='rviz2',
-            output='screen',
-            condition=IfCondition(use_rviz),
-            arguments=['-d', rviz_config],
-            parameters=[{'use_sim_time': True}],
-        ),
+        OpaqueFunction(function=_launch_rviz),
     ])

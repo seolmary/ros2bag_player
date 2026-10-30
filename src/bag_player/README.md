@@ -20,7 +20,7 @@ True reverse playback is real (not just stepping): the reader uses
 | Play / Pause | `▶ / ⏸` button or **Space** |
 | Reverse / Fast-forward | Speed buttons `-8x … 8x` (negative = reverse) or **↑/↓** |
 | Jump to a point | **Click** anywhere on the timeline, or drag to scrub |
-| Frame step | `⏪ / ⏩` buttons or **←/→** (0.1 s steps, while paused) |
+| Frame step | `⏪ / ⏩` buttons or **←/→** — one message of the selected topic (default: busiest PointCloud2), pauses |
 | Jump to start / end | `⏮ / ⏭` or **Home/End** |
 | Loop | Loop checkbox |
 | Show/hide a topic | Per-topic checkboxes (disable heavy topics like point clouds) |
@@ -34,6 +34,13 @@ colcon build --packages-select bag_player
 source install/setup.bash
 ```
 
+The control panel uses PyQt5; qtawesome supplies the button icons (optional,
+unicode glyphs otherwise):
+
+```bash
+sudo apt install python3-pyqt5 python3-qtawesome
+```
+
 ## Run
 
 Easiest — `run.sh` sources the workspace, lets you **pick which bag (log) folder
@@ -45,6 +52,10 @@ to play** in a dialog, then launches the player **and** RViz2 (with sim time):
 ./run.sh --last                # replay the bag picked last time
 ./run.sh /path/to/bag_records  # skip the dialog
 ```
+
+Desktop launcher (app menu + desktop icon, runs `run.sh` via the login shell so
+`ROS_DOMAIN_ID` etc. match your terminal): `tools/install_launcher.sh`
+(`--uninstall` to remove). Right-click the icon for "Replay last bag".
 
 The picker lists every directory containing a `metadata.yaml` (up to 4 levels
 below the search root) with duration, message/topic counts, size and record
@@ -84,9 +95,20 @@ your nodes) must run with sim time:
 rviz2 --ros-args -p use_sim_time:=true
 ```
 
-Then add displays for the topics you care about (this bag: `/ouster/points`,
-`/elevation_map`, `/odom`, `/feet_visualize`, TF). The bundled RViz config
-(`rviz/bag_player.rviz`) is already set up for them with `Fixed Frame: map`.
+Then add displays for the topics you care about.
+
+The launch file builds the RViz display list from the bag itself: every
+recorded topic with a known display class (point clouds, grid maps, markers,
+odometry, images, ...) gets a display, and saved displays whose topic is not in
+the bag are dropped. `rviz/bag_player.rviz` is only the seed; the generated
+file is `~/.cache/bag_player/rviz/<bag name>.rviz`, one per bag, and RViz saves
+back into it (Ctrl+S) so per-bag layout tweaks survive the next launch. Delete
+that file to start over from the seed. `rviz_config:=` seeds from that file
+instead.
+
+Compressed depth images (`/.../depth/compressed`, 16-bit PNG) are relabelled
+`16UC1; png` on the way out so RViz's compressed transport decodes them as
+depth instead of an 8-bit image with the wrong stride.
 
 ## Notes & limits
 
@@ -98,9 +120,12 @@ Then add displays for the topics you care about (this bag: `/ouster/points`,
   deliberately with the negative speed buttons (or ↓), so pausing during reverse
   and pressing play won't surprise you by continuing backward.
 - **Reverse playback / backward seeks move sim time backward.** RViz responds by
-  logging `Detected jump back in time. Clearing TF buffer / Resetting RViz` on
-  every frame and clearing its display. This is inherent to RViz under
-  `use_sim_time` — it is expected, not a crash. For a mapping/SLAM consumer that
+  logging `Detected jump back in time. Clearing TF buffer / Resetting RViz` and
+  resetting every display. Unthrottled (one backward step per ~2 ms tick) this
+  broke RViz rendering — robot and grid maps turned permanently flat white — so
+  backward `/clock` steps are capped at one per `BACKWARD_CLOCK_PERIOD_S`
+  (0.25 s wall). Between steps RViz's clock stays slightly ahead of the replayed
+  stamps, which TF tolerates. For a mapping/SLAM consumer that
   needs faithful, monotonic time, **play forward at 1x**.
 - `/tf_static` is latched once at startup so frames stay resolvable after seeks.
 
@@ -113,5 +138,5 @@ bag_player/
   bag_player/bag_picker.py     # startup dialog: choose which bag folder to play
   bag_player/app.py            # entry point: wires engine + Qt together
   launch/player.launch.py      # player (+ RViz2 with use_sim_time)
-  rviz/bag_player.rviz         # RViz2 config for this bag's topics
+  rviz/bag_player.rviz         # seed RViz2 config (displays regenerated per bag)
 ```

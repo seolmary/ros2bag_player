@@ -2,28 +2,40 @@
 
 import os
 
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import QSize, Qt, QTimer
 from PyQt5.QtWidgets import (
     QCheckBox,
-    QFrame,
-    QGridLayout,
     QGroupBox,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPushButton,
-    QScrollArea,
     QSlider,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
 from bag_player.bag_picker import pick_with_gui
 
-# Signed speed presets shown as buttons (negative = reverse).
+try:
+    import qtawesome as qta
+except ImportError:
+    qta = None
+
 SPEED_PRESETS = [-8.0, -4.0, -2.0, -1.0, -0.5, 0.5, 1.0, 2.0, 4.0, 8.0]
-STEP_SECONDS = 0.1          # how far the frame-step buttons move
-SLIDER_TICKS = 100000       # slider resolution
+SLIDER_TICKS = 100000
+
+ICON_COLOR = '#333333'
+TIMELINE_QSS = '''
+QSlider::groove:horizontal { height: 8px; border-radius: 4px; background: #C9CED4; }
+QSlider::sub-page:horizontal { border-radius: 4px; background: #2E9E6B; }
+QSlider::handle:horizontal { width: 18px; height: 18px; margin: -5px 0;
+                             border-radius: 9px; background: #FFFFFF; border: 1px solid #8A9099; }
+'''
 
 
 def _fmt_time(seconds):
@@ -32,15 +44,13 @@ def _fmt_time(seconds):
     return f'{int(m):02d}:{s:05.2f}'
 
 
-class SeekSlider(QSlider):
-    """A horizontal slider where a click jumps to that position and dragging
-    scrubs.
+def _short_type(type_str):
+    return type_str.replace('/msg/', '/')
 
-    Press/release go through ``setSliderDown()`` so ``sliderPressed`` and
-    ``sliderReleased`` always fire in pairs — emitting ``sliderPressed`` by
-    hand (without the slider ever being down) leaves the panel's scrubbing
-    flag stuck and the bar stops following playback.
-    """
+
+class SeekSlider(QSlider):
+    """Click jumps, drag scrubs. Press/release go through setSliderDown() so
+    sliderPressed/sliderReleased always pair up."""
 
     def _value_at(self, x):
         ratio = min(1.0, max(0.0, x / max(1, self.width())))
@@ -48,7 +58,7 @@ class SeekSlider(QSlider):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton and self.maximum() > self.minimum():
-            self.setSliderDown(True)   # emits sliderPressed (scrubbing starts)
+            self.setSliderDown(True)
             self.setValue(int(self._value_at(event.pos().x())))
             event.accept()
             return
@@ -63,7 +73,7 @@ class SeekSlider(QSlider):
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton and self.isSliderDown():
-            self.setSliderDown(False)  # emits sliderReleased (scrubbing ends)
+            self.setSliderDown(False)
             event.accept()
             return
         super().mouseReleaseEvent(event)
@@ -76,22 +86,36 @@ class ControlPanel(QWidget):
         self._scrubbing = False
         self._bag_generation = player.get_bag_generation()
 
-        self.setMinimumWidth(640)
+        self.setMinimumWidth(720)
         self._build_ui()
         self._sync_bag_header()
 
-        # Poll the engine to refresh the timeline / labels.
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._refresh)
-        self._timer.start(33)  # ~30 Hz
+        self._timer.start(33)
 
-        self._sync_speed_label()
+        self._sync_speed()
 
     # ------------------------------------------------------------------ #
     # UI construction
     # ------------------------------------------------------------------ #
+    def _icon(self, name):
+        return qta.icon(f'fa5s.{name}', color=ICON_COLOR) if qta else None
+
+    def _button(self, icon, fallback, tip, text=''):
+        b = QPushButton(text)
+        if qta:
+            b.setIcon(self._icon(icon))
+            b.setIconSize(QSize(20, 20))
+        elif not text:
+            b.setText(fallback)
+        b.setToolTip(tip)
+        b.setFocusPolicy(Qt.NoFocus)
+        return b
+
     def _build_ui(self):
         root = QVBoxLayout(self)
+        root.setSpacing(10)
 
         # --- which bag is loaded ----------------------------------------
         bag_row = QHBoxLayout()
@@ -99,8 +123,7 @@ class ControlPanel(QWidget):
         self.bag_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.bag_label.setStyleSheet('color: gray; font-size: 11px;')
         bag_row.addWidget(self.bag_label, 1)
-        btn_open = QPushButton('Open bag…')
-        btn_open.setFocusPolicy(Qt.NoFocus)  # keep Space as play/pause
+        btn_open = self._button('folder-open', '', 'Open another bag', text='Open bag…')
         btn_open.clicked.connect(self._on_open_bag)
         bag_row.addWidget(btn_open)
         root.addLayout(bag_row)
@@ -108,14 +131,13 @@ class ControlPanel(QWidget):
         # --- timeline ---------------------------------------------------
         self.time_label = QLabel('00:00.00 / 00:00.00')
         self.time_label.setAlignment(Qt.AlignCenter)
-        self.time_label.setStyleSheet('font-family: monospace; font-size: 15px;')
+        self.time_label.setStyleSheet('font-family: monospace; font-size: 24px; font-weight: bold;')
         root.addWidget(self.time_label)
 
         self.slider = SeekSlider(Qt.Horizontal)
         self.slider.setRange(0, SLIDER_TICKS)
-        # Never let the slider take keyboard focus: a focused QSlider consumes
-        # the arrow keys, which are the panel's frame-step shortcuts.
-        self.slider.setFocusPolicy(Qt.NoFocus)
+        self.slider.setStyleSheet(TIMELINE_QSS)
+        self.slider.setFocusPolicy(Qt.NoFocus)  # a focused slider would eat the arrow-key shortcuts
         self.slider.sliderPressed.connect(self._on_scrub_start)
         self.slider.sliderReleased.connect(self._on_scrub_end)
         self.slider.valueChanged.connect(self._on_slider_value)
@@ -123,79 +145,136 @@ class ControlPanel(QWidget):
 
         # --- transport buttons -----------------------------------------
         transport = QHBoxLayout()
-        self.btn_start = QPushButton('⏮')          # |<
-        self.btn_step_back = QPushButton('⏪')       # <<
-        self.btn_play = QPushButton('▶')            # play / pause toggle
-        self.btn_step_fwd = QPushButton('⏩')        # >>
-        self.btn_end = QPushButton('⏭')             # >|
+        self.btn_start = self._button('step-backward', '⏮', 'Go to start (Home)')
+        self.btn_step_back = self._button('backward', '⏪', 'Previous frame of the selected topic (←)')
+        self.btn_play = self._button('play', '▶', 'Play / pause (Space)')
+        self.btn_step_fwd = self._button('forward', '⏩', 'Next frame of the selected topic (→)')
+        self.btn_end = self._button('step-forward', '⏭', 'Go to end (End)')
         for b in (self.btn_start, self.btn_step_back, self.btn_play,
                   self.btn_step_fwd, self.btn_end):
-            b.setFixedHeight(40)
+            b.setFixedHeight(44)
             b.setStyleSheet('font-size: 18px;')
             transport.addWidget(b)
-        self.btn_play.setMinimumWidth(90)
+        self.btn_play.setMinimumWidth(110)
+        self.btn_play.setIconSize(QSize(24, 24))
         root.addLayout(transport)
 
         self.btn_start.clicked.connect(lambda: self.player.seek_fraction(0.0))
         self.btn_end.clicked.connect(lambda: self.player.seek_fraction(1.0))
-        self.btn_step_back.clicked.connect(lambda: self.player.step(-STEP_SECONDS))
-        self.btn_step_fwd.clicked.connect(lambda: self.player.step(+STEP_SECONDS))
+        self.btn_step_back.clicked.connect(lambda: self._step(-1))
+        self.btn_step_fwd.clicked.connect(lambda: self._step(+1))
         self.btn_play.clicked.connect(self._on_toggle)
 
         # --- speed ------------------------------------------------------
-        speed_box = QGroupBox('Speed  (negative = reverse)')
-        speed_layout = QGridLayout(speed_box)
-        self.speed_label = QLabel('x1.0')
-        self.speed_label.setAlignment(Qt.AlignCenter)
+        speed_box = QGroupBox('Speed')
+        speed_box.setToolTip(
+            'Left of centre = reverse. Reverse moves sim time backward, so RViz '
+            'logs "jump back in time / Resetting" a few times a second — this is expected.')
+        speed_layout = QVBoxLayout(speed_box)
+        speed_row = QHBoxLayout()
+        self.speed_label = QLabel()
+        self.speed_label.setMinimumWidth(120)
         self.speed_label.setStyleSheet('font-weight: bold; font-size: 14px;')
-        speed_layout.addWidget(self.speed_label, 0, 0, 1, len(SPEED_PRESETS))
-        for i, preset in enumerate(SPEED_PRESETS):
-            btn = QPushButton(f'{preset:g}x')
-            btn.setFixedHeight(30)
-            btn.clicked.connect(lambda _, p=preset: self._on_speed(p))
-            speed_layout.addWidget(btn, 1, i)
+        speed_row.addWidget(self.speed_label)
+        self.speed_slider = QSlider(Qt.Horizontal)
+        self.speed_slider.setRange(0, len(SPEED_PRESETS) - 1)
+        self.speed_slider.setPageStep(1)
+        self.speed_slider.setTickPosition(QSlider.TicksBelow)
+        self.speed_slider.setTickInterval(1)
+        self.speed_slider.setFocusPolicy(Qt.NoFocus)
+        self.speed_slider.valueChanged.connect(lambda i: self._on_speed(SPEED_PRESETS[i]))
+        speed_row.addWidget(self.speed_slider, 1)
+        speed_layout.addLayout(speed_row)
+        ticks = QHBoxLayout()
+        ticks.addSpacing(self.speed_label.minimumWidth() + speed_row.spacing())
+        for preset in SPEED_PRESETS:
+            lab = QLabel(f'{preset:g}x')
+            lab.setAlignment(Qt.AlignCenter)
+            lab.setStyleSheet('color: gray; font-size: 10px;')
+            ticks.addWidget(lab, 1)
+        speed_layout.addLayout(ticks)
         root.addWidget(speed_box)
-
-        reverse_note = QLabel(
-            'Note: reverse moves sim time backward, so RViz logs '
-            '"jump back in time / Resetting" every frame — this is expected.')
-        reverse_note.setWordWrap(True)
-        reverse_note.setStyleSheet('color: gray; font-size: 11px;')
-        root.addWidget(reverse_note)
 
         # --- options ----------------------------------------------------
         options = QHBoxLayout()
         self.loop_check = QCheckBox('Loop')
+        self.loop_check.setFocusPolicy(Qt.NoFocus)
         self.loop_check.toggled.connect(self.player.set_loop)
         options.addWidget(self.loop_check)
         options.addStretch(1)
-        hint = QLabel('Space: play/pause   ←/→: step   ↑/↓: speed')
+        hint = QLabel('Space: play/pause   ←/→: frame   ↑/↓: speed   Home/End')
         hint.setStyleSheet('color: gray;')
         options.addWidget(hint)
         root.addLayout(options)
 
         # --- per-topic toggles -----------------------------------------
         topics_box = QGroupBox('Topics')
-        topics_outer = QVBoxLayout(topics_box)
-        self._topics_scroll = QScrollArea()
-        self._topics_scroll.setWidgetResizable(True)
-        self._topics_scroll.setFrameShape(QFrame.NoFrame)
-        self._topics_scroll.setMaximumHeight(180)
+        topics_layout = QVBoxLayout(topics_box)
+        tools = QHBoxLayout()
+        self.topic_filter = QLineEdit()
+        self.topic_filter.setPlaceholderText('Filter topics…')
+        self.topic_filter.setClearButtonEnabled(True)
+        self.topic_filter.textChanged.connect(self._filter_topics)
+        tools.addWidget(self.topic_filter, 1)
+        for text, enabled in (('All', True), ('None', False)):
+            b = QPushButton(text)
+            b.setFocusPolicy(Qt.NoFocus)
+            b.setToolTip(f'{"Enable" if enabled else "Disable"} every listed topic')
+            b.clicked.connect(lambda _, e=enabled: self._set_all_topics(e))
+            tools.addWidget(b)
+        topics_layout.addLayout(tools)
+        self.topics = QTreeWidget()
+        self.topics.setHeaderLabels(['Topic', 'Type', 'Msgs'])
+        self.topics.setRootIsDecorated(False)
+        self.topics.setAlternatingRowColors(True)
+        self.topics.setFocusPolicy(Qt.NoFocus)
+        self.topics.setMinimumHeight(180)
+        self.topics.header().setStretchLastSection(False)
+        self.topics.header().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.topics.header().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.topics.header().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.topics.itemChanged.connect(self._on_topic_item)
+        topics_layout.addWidget(self.topics)
+        root.addWidget(topics_box, 1)
         self._populate_topics()
-        topics_outer.addWidget(self._topics_scroll)
-        root.addWidget(topics_box)
 
     def _populate_topics(self):
-        inner = QWidget()
-        inner_layout = QVBoxLayout(inner)
+        counts = self.player.topic_counts
+        self.topics.blockSignals(True)
+        self.topics.clear()
         for topic in sorted(self.player.topic_types):
-            type_str = self.player.topic_types[topic]
-            cb = QCheckBox(f'{topic}   ({type_str})')
-            cb.setChecked(topic in self.player._enabled)
-            cb.toggled.connect(lambda state, t=topic: self.player.set_topic_enabled(t, state))
-            inner_layout.addWidget(cb)
-        inner_layout.addStretch(1)
-        self._topics_scroll.setWidget(inner)  # setWidget drops the old one
+            item = QTreeWidgetItem([topic, _short_type(self.player.topic_types[topic]),
+                                    f'{counts.get(topic, 0):,}'])
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(0, Qt.Checked if topic in self.player._enabled else Qt.Unchecked)
+            item.setTextAlignment(2, Qt.AlignRight | Qt.AlignVCenter)
+            self.topics.addTopLevelItem(item)
+        clouds = [i for i in self._topic_items() if i.text(1).endswith('/PointCloud2')]
+        if clouds:
+            self.topics.setCurrentItem(max(clouds, key=lambda i: counts.get(i.text(0), 0)))
+        self.topics.blockSignals(False)
+        self._filter_topics(self.topic_filter.text())
+
+    def _topic_items(self):
+        return [self.topics.topLevelItem(i) for i in range(self.topics.topLevelItemCount())]
+
+    def _step(self, direction):
+        item = self.topics.currentItem()
+        self.player.step_frame(direction, item.text(0) if item else None)
+
+    def _on_topic_item(self, item, column):
+        if column == 0:
+            self.player.set_topic_enabled(item.text(0), item.checkState(0) == Qt.Checked)
+
+    def _filter_topics(self, text):
+        text = text.lower()
+        for item in self._topic_items():
+            item.setHidden(text not in item.text(0).lower() and text not in item.text(1).lower())
+
+    def _set_all_topics(self, enabled):
+        for item in self._topic_items():
+            if not item.isHidden():
+                item.setCheckState(0, Qt.Checked if enabled else Qt.Unchecked)
 
     def _sync_bag_header(self):
         bag_name = os.path.basename(os.path.normpath(self.player.bag_uri))
@@ -213,8 +292,6 @@ class ControlPanel(QWidget):
         self._scrubbing = False
 
     def _on_slider_value(self, value):
-        # Only seek when the change came from the user dragging/clicking,
-        # not from our own periodic refresh.
         if self._scrubbing:
             self.player.seek_fraction(value / SLIDER_TICKS)
 
@@ -227,13 +304,9 @@ class ControlPanel(QWidget):
         root = os.environ.get('BAG_SEARCH_ROOT', '~/ros2bag')
         bag = pick_with_gui(root, initial=self.player.bag_uri)
         if bag is not None:
-            # Async: the play thread swaps the reader; _refresh() picks up the
-            # generation bump (or the error) and updates the widgets.
             self.player.request_load(bag.path, bag.storage_id)
 
     def _on_bag_changed(self):
-        # A switch must always re-park the bar, even if a slider release went
-        # missing (e.g. the mouse was let go outside the window).
         self._scrubbing = False
         self._sync_bag_header()
         self._populate_topics()
@@ -256,23 +329,19 @@ class ControlPanel(QWidget):
     # Transport / speed
     # ------------------------------------------------------------------ #
     def _on_toggle(self):
-        # The ▶ button always resumes *forward*. Reverse is only entered
-        # deliberately via the negative speed buttons. This keeps play/pause
-        # intuitive and avoids accidentally resuming in reverse — reverse moves
-        # sim time backward, which makes RViz reset its TF buffer every frame.
-        if self.player.is_paused():
+        if self.player.is_paused():  # play always resumes forward; reverse only via the speed slider
             magnitude = abs(self.player.get_rate_signed()) or 1.0
             self.player.set_rate_signed(magnitude)
             self.player.play()
         else:
             self.player.pause()
-        self._sync_speed_label()
+        self._sync_speed()
         self._update_play_button()
 
     def _on_speed(self, preset):
         self.player.set_rate_signed(preset)
         self.player.play()
-        self._sync_speed_label()
+        self._sync_speed()
         self._update_play_button()
 
     def _bump_speed(self, direction):
@@ -283,13 +352,21 @@ class ControlPanel(QWidget):
         nxt = max(0, min(len(SPEED_PRESETS) - 1, nearest + direction))
         self._on_speed(SPEED_PRESETS[nxt])
 
-    def _sync_speed_label(self):
+    def _sync_speed(self):
         rate = self.player.get_rate_signed()
         arrow = '◀ REVERSE' if rate < 0 else '▶'
         self.speed_label.setText(f'{arrow}  x{abs(rate):g}')
+        if rate in SPEED_PRESETS:
+            self.speed_slider.blockSignals(True)
+            self.speed_slider.setValue(SPEED_PRESETS.index(rate))
+            self.speed_slider.blockSignals(False)
 
     def _update_play_button(self):
-        self.btn_play.setText('▶' if self.player.is_paused() else '⏸')
+        paused = self.player.is_paused()
+        if qta:
+            self.btn_play.setIcon(self._icon('play' if paused else 'pause'))
+        else:
+            self.btn_play.setText('▶' if paused else '⏸')
 
     # ------------------------------------------------------------------ #
     # Periodic refresh
@@ -319,9 +396,9 @@ class ControlPanel(QWidget):
         if key == Qt.Key_Space:
             self._on_toggle()
         elif key == Qt.Key_Left:
-            self.player.step(-STEP_SECONDS)
+            self._step(-1)
         elif key == Qt.Key_Right:
-            self.player.step(+STEP_SECONDS)
+            self._step(+1)
         elif key == Qt.Key_Up:
             self._bump_speed(+1)
         elif key == Qt.Key_Down:
